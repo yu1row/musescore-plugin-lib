@@ -36,14 +36,22 @@ MuseScore Studio **4.4 以降**で、例プラグインが実環境で動くこ�
 ### 4. 終了 API（目視）
 
 - [ ] 例プラグインに `Qt.quit()` が無い（`quit()` のみ）
+- [ ] **Cancel / OK** でプラグインだけ終わり、MuseScore 本体は閉じない
 
-### 5. バージョンゲート（任意）
+### 5. `requiresScore` / スコア全閉（任意）
+
+- [ ] 例ダイアログは `requiresScore: false` である
+- [ ] スコアをすべて閉じた状態でダイアログを閉じても、MuseScore 本体が終了しない
+
+### 6. バージョンゲート（任意）
 
 不足バージョンでの実機確認ができる場合:
 
 - [ ] 要求未満だとダイアログ（またはステータス表示）に理由が出て、MuseScore 本体は落ちない
 
 古い版を用意できない場合は、`examples/**/*.qml` の `Version.requirePluginAtLeast` → UI 表示 → `quit()` の流れをコードレビューで確認すれば十分です。
+
+落とし穴の詳細は [PITFALLS.md](PITFALLS.md) を参照してください。
 
 ## 記録（任意）
 

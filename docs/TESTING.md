@@ -19,7 +19,7 @@ npm test
 
 カバー対象の目安:
 
-- 純粋ロジック: `version.js` / `settings.js` / `notes.js` / `log.js`
+- 純粋ロジック: `version.js` / `settings.js` / `notes.js` / `log.js` / `fonts.js` / `i18n.js` / `annotations.js`
 - mock 付き: `elements.js` / `selection.js` / `score.js` / `cursor.js`
 
 ## 実機スモーク

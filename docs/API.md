@@ -715,3 +715,136 @@ onRun: {
 ```
 
 `mirrorConsole: true` を付けると、バッファに加えて `console.log` も呼びます（`-d` 起動時用）。
+
+---
+
+## fonts.js
+
+独自フォントが OS に入っているかの確認ヘルパーです。
+
+**Import:** `import ".../lib/fonts.js" as Fonts`
+
+背景・運用上の注意は [PITFALLS.md §2](PITFALLS.md#2-フォントインストール済みチェック) を参照してください。
+
+### `isInstalled(family, families?)`
+
+`families` 省略時は `Qt.fontFamilies()` を使います（単体テストでは配列を渡してください）。大文字小文字は無視します。
+
+**使用例:**
+
+```qml
+if (!Fonts.isInstalled("KalimbaNotationJ")) {
+    // 警告ダイアログなど
+}
+```
+
+### `missing(required, families?)`
+
+未インストールのファミリー名配列を返します。
+
+**使用例:**
+
+```qml
+var missing = Fonts.missing(["KalimbaNotationJ", "KalimbaNotationE"])
+```
+
+### `missingMessage(missingFamilies, template?)`
+
+箇条書き付きの案内文を返します。不足が無ければ `""`。`template` 内の `%1` がリストに置換されます。
+
+---
+
+## i18n.js
+
+MuseScore 4.x でプラグイン `.qm` が読まれないことへのフォールバック補助です。
+
+**Import:** `import ".../lib/i18n.js" as I18n`
+
+詳細は [PITFALLS.md §1](PITFALLS.md#1-多言語対応qm-が読まれない) と [musescore/MuseScore#30833](https://github.com/musescore/MuseScore/issues/30833) を参照してください。
+
+### `isLanguage(localeName, lang)`
+
+`localeName` が `lang` で始まるか（例: `"ja_JP"` と `"ja"`）。
+
+### `fallback(translated, source, dictionary, useDictionary)`
+
+`qsTr` の結果が原文のまま、かつ `useDictionary` が真なら辞書を返します。
+
+**使用例:**
+
+```qml
+property var ja: ({ "Cancel": "キャンセル" })
+
+function tr(source) {
+    return I18n.fallback(
+        qsTr(source), source, ja,
+        I18n.isLanguage(Qt.locale().name, "ja"))
+}
+```
+
+### `tr(qsTrFn, source, dictionary, useDictionary, disambiguation?)`
+
+`qsTr` 相当の関数を渡して辞書解決まで行うショートカット。曖昧性付きキーは `source + "\x1e" + disambiguation` です。
+
+---
+
+## annotations.js
+
+プラグインが追加した楽譜上の注釈（主に `STAFF_TEXT`）を後から自分の分だけ消すためのヘルパーです。
+
+**Import:** `import ".../lib/annotations.js" as Ann`
+
+背景は [PITFALLS.md §3](PITFALLS.md#3-プラグインが追加した要素の削除) を参照してください。
+
+### `tag(visibleText, prefix?)` / `hasTag(text, prefix?)` / `stripTag(text, prefix?)`
+
+既定プレフィックスは ZWSP（`\u200B`）です。
+
+**使用例:**
+
+```qml
+var text = newElement(Element.STAFF_TEXT)
+text.fontFace = "MyPluginFont"
+text.text = Ann.tag(noteLabel)
+```
+
+### `isOwned(element, options?)`
+
+所有判定。`options` の主なキー:
+
+| キー | 説明 |
+|---|---|
+| `fontFaces` | 一致する `fontFace` があれば所有（`requireTag` が真ならタグも必要） |
+| `tagPrefix` | テキスト先頭タグ（省略時 ZWSP） |
+| `elementType` | `Element.STAFF_TEXT` など型の一致 |
+| `requireTag` | `true` なら fontFace だけでは不十分 |
+
+### `collectFromSegment(segment, options?)`
+
+`segment.annotations` から所有要素を集めます。`staffIdx`（0 始まり）を付けると `track / 4` で譜表フィルタします。
+
+### `unique(elements)`
+
+`el.is()` があればそれで、無ければ参照同一性で重複を除きます。削除前のまとめに使います。
+
+**削除の流れ（概念）:**
+
+```qml
+Score.withCmd(curScore, "Remove my texts", function () {
+    var cursor = CursorUtil.create(curScore, 0)
+    var found = []
+    CursorUtil.forEach(cursor, function (c) {
+        if (!c.segment)
+            return
+        var hit = Ann.collectFromSegment(c.segment, {
+            elementType: Element.STAFF_TEXT,
+            fontFaces: ["MyPluginFont"]
+        })
+        for (var i = 0; i < hit.length; i++)
+            found.push(hit[i])
+    })
+    found = Ann.unique(found)
+    for (var j = 0; j < found.length; j++)
+        removeElement(found[j])
+})
+```

@@ -23,7 +23,8 @@ MuseScore {
     title: "Count Selection (MsLib example)"
     categoryCode: "devtools"
     pluginType: "dialog"
-    requiresScore: true
+    // false: closing all scores while the dialog is open must not exit the app
+    requiresScore: false
     width: 420
     height: 200
 

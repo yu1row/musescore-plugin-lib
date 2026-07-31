@@ -7,7 +7,7 @@ QML から相対パスで `.js` を import して使います。
 
 - MuseScore Studio **4.4 以降のみ**（`import MuseScore` / Qt 6）
 - **4.3.x 以前は対象外**です（一覧に出ない／Settings の import 要件が異なるため、同一ファイルでの共存は行いません）
-- スコア操作・選択・バージョンゲート・設定の永続化・ログ（コンソール代替）など、プラグインで繰り返し出る処理の共通化
+- スコア操作・選択・バージョンゲート・設定の永続化・ログ（コンソール代替）・フォント確認・i18n フォールバック・追加注釈の所有判定など、プラグインで繰り返し出る処理の共通化
 
 ## 構成
 
@@ -21,13 +21,17 @@ musescore-plugin-lib/
 │   ├── notes.js       # 音名変換・ユニーク pitch
 │   ├── version.js     # MuseScore バージョン判定・起動ゲート
 │   ├── settings.js    # 設定スキーマ / 読込・保存・UI 同期
-│   └── log.js         # ダイアログ／ファイル向けログ（console 代替）
+│   ├── log.js         # ダイアログ／ファイル向けログ（console 代替）
+│   ├── fonts.js       # フォントインストール済みチェック
+│   ├── i18n.js        # qsTr + 辞書フォールバック（4.x の qm 非対応対策）
+│   └── annotations.js # プラグイン所有 STAFF_TEXT のタグ付け・収集
 ├── examples/
 │   ├── count-selection/
 │   └── settings-persist/
 ├── tests/             # Node 単体テスト
 └── docs/
     ├── API.md
+    ├── PITFALLS.md    # 実プラグイン改修で得た落とし穴
     ├── TESTING.md
     └── SMOKE.md
 ```
@@ -161,8 +165,12 @@ npm test
 - MuseScore 4 には Plugin Creator／デバッグコンソール UI がありません。**`console.log` の出力は GUI 上では通常見えません**（端末から `-d` 起動時のみ見える場合があります）。ユーザー向けメッセージはダイアログの `Label` などへ出してください。デバッグの蓄積には [`log.js`](docs/API.md#logjs)（バッファ／FileIO）を使えます。
 - プラグインを終了するときは **`quit()`** を使ってください。
 - **`Qt.quit()` は使わないでください。** MuseScore 本体まで閉じたり、クラッシュの原因になります。
+- ダイアログ型は原則 **`requiresScore: false`** にし、スコア有無は `onRun` で確認してください。`true` のまま全スコアを閉じると、プラグイン終了時にアプリごと終了することがあります。
 - バージョンゲートはメニュー表示を防げません。必ず `onRun` 内で判定し、不足時は UI に理由を出してから `quit()` してください。
 - 設定永続化では **`import Qt.labs.settings` を書かないでください。** 4.4+ ではモジュール未インストールエラーになります。
+- 分割した `.qml` に `MuseScore` という文字列（`import MuseScore` 含む）があると、別プラグインとして一覧に出ることがあります。詳細は [PITFALLS.md](docs/PITFALLS.md) を参照してください。
+
+実プラグイン改修で得た落とし穴（多言語・フォント・追加要素の削除など）は [PITFALLS.md](docs/PITFALLS.md) にまとめています。
 
 ## API 概要
 
@@ -178,6 +186,9 @@ npm test
 | [`version.js`](docs/API.md#versionjs) | `parse`, `format`, `compare`, `isAtLeast`, `requireAtLeast`, `requirePluginAtLeast` |
 | [`settings.js`](docs/API.md#settingsjs) | `create`, `loadTo`, `saveFrom`, `reset`, `applyTo`, `collectFrom` |
 | [`log.js`](docs/API.md#logjs) | `create`, `info`, `dump`, `writeFile`, `appendFile`, `tempLogPath` |
+| [`fonts.js`](docs/API.md#fontsjs) | `isInstalled`, `missing`, `missingMessage` |
+| [`i18n.js`](docs/API.md#i18njs) | `isLanguage`, `fallback`, `tr` |
+| [`annotations.js`](docs/API.md#annotationsjs) | `tag`, `hasTag`, `isOwned`, `collectFromSegment`, `unique` |
 
 ## ライセンス
 
