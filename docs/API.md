@@ -463,3 +463,255 @@ console.log("running on MuseScore " + Version.pluginVersionString(plugin))
 ```
 
 不足時は必ず `quit()` でプラグインを終了してください。詳細は [README の注意点](../README.md#注意点) を参照してください。
+
+---
+
+## settings.js
+
+設定のキー／初期値／読込／保存／UI 反映をスキーマ駆動で扱うヘルパーです。
+
+**Import:** `import ".../lib/settings.js" as SettingsUtil`
+
+永続化先は MuseScore 組み込みの `Settings` です（`import MuseScore` のみ。`Qt.labs.settings` は不要）。
+
+```qml
+Settings {
+    id: backend
+    category: "MyPlugin"
+    property string payload: "{}"
+}
+property var store: SettingsUtil.create({ modeIndex: 0, verbose: true })
+```
+
+### 設計方針
+
+| よくある課題 | このライブラリでの対応 |
+|---|---|
+| 初期値がプロパティ定義と `reset()` で二重管理 | `defaults` オブジェクトが唯一の定義 |
+| キーがプロパティ名に暗黙依存 | `defaults` のキーがスキーマ |
+| `save`/`load` が UI コントロール ID に密結合 | binder マップで UI と分離 |
+| `import Qt.labs.settings` が 4.4+ で不可 | MuseScore 組み込み `Settings` + JSON `payload` |
+
+`create` 以降の関数は、原則として新しい `store` オブジェクトを返します（QML の `property var store` へ再代入してください）。
+
+### `create(defaults)`
+
+スキーマからストア `{ defaults, values }` を作ります。
+
+**使用例:**
+
+```qml
+property var store: SettingsUtil.create({
+    modeIndex: 0,
+    verbose: true
+})
+```
+
+### `keys(store)`
+
+スキーマのキー配列を返します。
+
+**使用例:**
+
+```qml
+console.log(SettingsUtil.keys(store))  // ["modeIndex", "verbose"]
+```
+
+### `load(store, payload)` / `savePayload(store)`
+
+JSON 文字列 ↔ ストア。
+
+**使用例:**
+
+```qml
+store = SettingsUtil.load(store, backend.payload)
+backend.payload = SettingsUtil.savePayload(store)
+```
+
+### `loadFrom(settings, store)` / `saveTo(settings, store)`
+
+`Settings` オブジェクトの `payload` プロパティと同期します（プロパティ名は第 3 引数で変更可）。
+
+**使用例:**
+
+```qml
+store = SettingsUtil.loadFrom(backend, store)
+SettingsUtil.saveTo(backend, store)
+```
+
+### `reset(store)` / `resetAndSave(settings, store)`
+
+初期値へ戻します。`resetAndSave` は永続化まで行います。
+
+**使用例:**
+
+```qml
+store = SettingsUtil.reset(store)
+SettingsUtil.applyTo(store, uiBinders())
+
+// または
+store = SettingsUtil.resetAndSave(backend, store)
+SettingsUtil.applyTo(store, uiBinders())
+```
+
+### `get(store, key)` / `set(store, key, value)`
+
+1 キーの取得・更新。
+
+**使用例:**
+
+```qml
+console.log(SettingsUtil.get(store, "verbose"))
+store = SettingsUtil.set(store, "verbose", false)
+```
+
+### `applyTo(store, binders)` / `collectFrom(store, binders)`
+
+UI との同期。`binders` は `{ key: function ... }`。
+
+**使用例:**
+
+```qml
+function uiBinders() {
+    return {
+        modeIndex: function (v) { modeBox.currentIndex = v },
+        verbose: function (v) { verboseBox.checked = v }
+    }
+}
+function uiCollectors() {
+    return {
+        modeIndex: function () { return modeBox.currentIndex },
+        verbose: function () { return verboseBox.checked }
+    }
+}
+
+SettingsUtil.applyTo(store, uiBinders())
+store = SettingsUtil.collectFrom(store, uiCollectors())
+```
+
+### `loadTo(settings, store, binders)` / `saveFrom(settings, store, binders)`
+
+読込→反映、収集→保存のショートカット。
+
+**使用例:**
+
+```qml
+onRun: {
+    store = SettingsUtil.loadTo(backend, store, uiBinders())
+}
+
+// OK ボタン
+onClicked: {
+    store = SettingsUtil.saveFrom(backend, store, uiCollectors())
+    quit()
+}
+```
+
+### 全体の使用例
+
+```qml
+import MuseScore
+import QtQuick
+import "../musescore-plugin-lib/lib/settings.js" as SettingsUtil
+
+MuseScore {
+    pluginType: "dialog"
+    width: 360
+    height: 200
+
+    Settings {
+        id: backend
+        category: "MyPlugin"
+        property string payload: "{}"
+    }
+
+    property var store: SettingsUtil.create({
+        execModeIndex: 0,
+        keysIndex: 0,
+        isCheckVoiceRange: true
+    })
+
+    function uiBinders() {
+        return {
+            execModeIndex: function (v) { cmbExecMode.currentIndex = v },
+            keysIndex: function (v) { cmbKeys.currentIndex = v },
+            isCheckVoiceRange: function (v) { cbCheckVoiceRange.checked = v }
+        }
+    }
+
+    function uiCollectors() {
+        return {
+            execModeIndex: function () { return cmbExecMode.currentIndex },
+            keysIndex: function () { return cmbKeys.currentIndex },
+            isCheckVoiceRange: function () { return cbCheckVoiceRange.checked }
+        }
+    }
+
+    onRun: { store = SettingsUtil.loadTo(backend, store, uiBinders()) }
+
+    // Default: store = SettingsUtil.reset(store); SettingsUtil.applyTo(store, uiBinders())
+    // OK:      store = SettingsUtil.saveFrom(backend, store, uiCollectors()); quit()
+}
+```
+
+実動サンプルは `examples/settings-persist/SettingsPersistExample.qml` を参照してください。
+
+### 低レベル API
+
+必要なら `clone` / `merge` / `parsePayload` / `stringify` も同じモジュールから利用できます。
+
+---
+
+## log.js
+
+MuseScore 4 向けのログ／メッセージ補助です。
+
+**事実:** MuseScore 4 には MU3 のような Plugin Creator／コンソールウィンドウがありません。`console.log` は GUI では通常見えず、端末から `-d` で起動したときだけ見える場合があります。アプリの `%LOCALAPPDATA%\MuseScore\MuseScore4\logs\` にもプラグインの `console.log` は出ないことが多いです。
+
+**Import:** `import ".../lib/log.js" as Log`
+
+### 推奨パターン
+
+1. **ユーザー向け** — `Log.dump(logger)` をダイアログの `Label` に出す（例: Count Selection）
+2. **開発向けファイル** — MuseScore `FileIO` に `Log.writeFile` / `Log.appendFile`
+
+### `create(options)` / `info` / `warn` / `error` / `dump` / `clear`
+
+**使用例（ダイアログ表示）:**
+
+```qml
+import "../musescore-plugin-lib/lib/log.js" as Log
+
+property var logger: Log.create({ prefix: "MyPlugin: " })
+property string feedback: ""
+
+function showFeedback(message) {
+    Log.clear(logger)
+    Log.info(logger, message)
+    feedback = Log.dump(logger)
+}
+
+// Label { text: feedback; wrapMode: Text.Wrap }
+```
+
+### `writeFile` / `appendFile` / `tempLogPath`
+
+**使用例（ファイル出力）:**
+
+```qml
+import FileIO 3.0
+import "../musescore-plugin-lib/lib/log.js" as Log
+
+FileIO { id: logFile }
+
+property var logger: Log.create({ prefix: "MyPlugin: " })
+
+onRun: {
+    Log.info(logger, "started")
+    logFile.source = Log.tempLogPath(logFile, "my-plugin.log")
+    Log.writeFile(logger, logFile)   // 上書き
+    // Log.appendFile(logger, logFile) // 追記
+}
+```
+
+`mirrorConsole: true` を付けると、バッファに加えて `console.log` も呼びます（`-d` 起動時用）。

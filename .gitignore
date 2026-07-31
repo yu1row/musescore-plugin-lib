@@ -9,6 +9,9 @@ Desktop.ini
 *.swp
 *~
 
+# Node
+node_modules/
+
 # Local MuseScore install / temp
 *.qmlc
 *.jsc

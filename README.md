@@ -1,12 +1,13 @@
 # musescore-plugin-lib
 
-MuseScore Studio（4.4+）プラグイン向けの共有ユーティリティライブラリです。  
+MuseScore Studio（**4.4 以降専用**）プラグイン向けの共有ユーティリティライブラリです。  
 QML から相対パスで `.js` を import して使います。
 
 ## 対象
 
-- MuseScore Studio **4.4 以降**（`import MuseScore` / Qt 6）
-- プラグイン開発で繰り返し出てくるスコア操作・カーソル・選択・要素判定の共通化
+- MuseScore Studio **4.4 以降のみ**（`import MuseScore` / Qt 6）
+- **4.3.x 以前は対象外**です（一覧に出ない／Settings の import 要件が異なるため、同一ファイルでの共存は行いません）
+- スコア操作・選択・バージョンゲート・設定の永続化・ログ（コンソール代替）など、プラグインで繰り返し出る処理の共通化
 
 ## 構成
 
@@ -18,19 +19,24 @@ musescore-plugin-lib/
 │   ├── selection.js   # 選択要素の取得・型フィルタ
 │   ├── elements.js    # Note / Chord / Rest 判定
 │   ├── notes.js       # 音名変換・ユニーク pitch
-│   └── version.js     # MuseScore バージョン判定・起動ゲート
+│   ├── version.js     # MuseScore バージョン判定・起動ゲート
+│   ├── settings.js    # 設定スキーマ / 読込・保存・UI 同期
+│   └── log.js         # ダイアログ／ファイル向けログ（console 代替）
 ├── examples/
-│   └── count-selection/
-│       └── CountSelection.qml
+│   ├── count-selection/
+│   └── settings-persist/
+├── tests/             # Node 単体テスト
 └── docs/
-    └── API.md         # API 詳細
+    ├── API.md
+    ├── TESTING.md
+    └── SMOKE.md
 ```
 
 ## インストール
 
 1. このリポジトリを MuseScore の Plugins フォルダへ配置する（フォルダごと）。
 2. 例（Windows）: `%USERPROFILE%\Documents\MuseScore4\Plugins\musescore-plugin-lib\`
-3. MuseScore を起動し、Plugins → Plugin Manager で `Count Selection (MsLib example)` を有効化する。
+3. MuseScore を起動し、Plugin Manager で例プラグインを有効化する。
 
 自作プラグインから使う場合も、同じ Plugins 配下に置き、相対パスで import します。
 
@@ -43,6 +49,58 @@ Plugins/
 ```
 
 ## 使い方
+
+### 設定の永続化（settings.js）
+
+プラグイン設定を永続化するための 4.4+ 向け API です。
+
+- **初期値とキー**は `defaults` オブジェクトに集約
+- **UI との同期**は binder マップ（コントロール ID を Settings に書かない）
+- **`Qt.labs.settings` は不要**（`import MuseScore` のみ）
+
+```qml
+import MuseScore
+import QtQuick
+import "../musescore-plugin-lib/lib/settings.js" as SettingsUtil
+
+MuseScore {
+    pluginType: "dialog"
+    width: 360
+    height: 200
+
+    Settings {
+        id: backend
+        category: "MyPlugin"
+        property string payload: "{}"
+    }
+
+    property var store: SettingsUtil.create({
+        modeIndex: 0,
+        verbose: true
+    })
+
+    function uiBinders() {
+        return {
+            modeIndex: function (v) { modeBox.currentIndex = v },
+            verbose: function (v) { verboseBox.checked = v }
+        }
+    }
+    function uiCollectors() {
+        return {
+            modeIndex: function () { return modeBox.currentIndex },
+            verbose: function () { return verboseBox.checked }
+        }
+    }
+
+    onRun: { store = SettingsUtil.loadTo(backend, store, uiBinders()) }
+    // OK: store = SettingsUtil.saveFrom(backend, store, uiCollectors()); quit()
+    // Default: store = SettingsUtil.reset(store); SettingsUtil.applyTo(store, uiBinders())
+}
+```
+
+詳細は [API 詳細 — settings.js](docs/API.md#settingsjs) を参照してください。
+
+### バージョンゲート + スコア操作
 
 ```qml
 import MuseScore
@@ -78,15 +136,33 @@ MuseScore {
 }
 ```
 
-`version.js` は `mscoreMajorVersion` / `mscoreMinorVersion` / `mscoreUpdateVersion` を使って、指定バージョン未満なら実行を止めるゲートです。不足時は `quit()` でプラグインを終了してください。メニューからの起動自体は止められないため、`onRun` 直後に判定する形になります。
+各 JS モジュールは QML 側の `import MuseScore` を継承するため、`Element.NOTE` などの定数をモジュール内で利用できます。`.pragma library` や JS 同士の `.import` は使っていません。
 
-各モジュールは QML 側の `import MuseScore` を継承するため、`Element.NOTE` などの定数をモジュール内で利用できます。`.pragma library` や JS 同士の `.import` は使っていません。
+## テスト
+
+方針の詳細は [TESTING.md](docs/TESTING.md) を参照してください。
+
+### 単体テスト（CI）
+
+MuseScore に依存しない `lib/*.js` のロジックは Node.js で検証します。
+
+```bash
+npm test
+```
+
+`push` / `pull_request` 時に GitHub Actions でも実行されます。
+
+### 実機スモーク
+
+例プラグインや Settings の動作確認は [SMOKE.md](docs/SMOKE.md) のチェックリストに従ってください。
 
 ## 注意点
 
+- MuseScore 4 には Plugin Creator／デバッグコンソール UI がありません。**`console.log` の出力は GUI 上では通常見えません**（端末から `-d` 起動時のみ見える場合があります）。ユーザー向けメッセージはダイアログの `Label` などへ出してください。デバッグの蓄積には [`log.js`](docs/API.md#logjs)（バッファ／FileIO）を使えます。
 - プラグインを終了するときは **`quit()`** を使ってください。
 - **`Qt.quit()` は使わないでください。** MuseScore 本体まで閉じたり、クラッシュの原因になります。
-- バージョンゲートはメニュー表示を防げません。必ず `onRun` 内で判定し、不足時は `quit()` してください。
+- バージョンゲートはメニュー表示を防げません。必ず `onRun` 内で判定し、不足時は UI に理由を出してから `quit()` してください。
+- 設定永続化では **`import Qt.labs.settings` を書かないでください。** 4.4+ ではモジュール未インストールエラーになります。
 
 ## API 概要
 
@@ -100,7 +176,11 @@ MuseScore {
 | [`elements.js`](docs/API.md#elementsjs) | `isNote`, `isChord`, `isRest`, `isChordRest`, `chordNotes`, `asNotes` |
 | [`notes.js`](docs/API.md#notesjs) | `pitchName`, `label`, `uniquePitches` |
 | [`version.js`](docs/API.md#versionjs) | `parse`, `format`, `compare`, `isAtLeast`, `requireAtLeast`, `requirePluginAtLeast` |
+| [`settings.js`](docs/API.md#settingsjs) | `create`, `loadTo`, `saveFrom`, `reset`, `applyTo`, `collectFrom` |
+| [`log.js`](docs/API.md#logjs) | `create`, `info`, `dump`, `writeFile`, `appendFile`, `tempLogPath` |
 
 ## ライセンス
 
 [MIT](LICENSE) — Copyright (c) 2026 yu1row
+
+関連ドキュメント（サイト）: [yu1row.com/musescore/ — 共有ライブラリ](https://yu1row.com/musescore/plugin-lib.html)
